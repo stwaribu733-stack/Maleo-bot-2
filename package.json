@@ -1,0 +1,14 @@
+{
+  "name": "maleo-bot",
+  "version": "2.0.0",
+  "description": "Maleo - WhatsApp bot, shabiki wa Yanga SC, anayejua kila kitu",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "pino": "^9.4.0"
+  }
+}
