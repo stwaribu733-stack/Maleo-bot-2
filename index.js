@@ -180,6 +180,41 @@ async function describeSticker(stickerBuffer) {
   return text;
 }
 
+async function askMaleoAboutImage(jid, imageBuffer, mimeType, captionText) {
+  const hist = chatHistory.get(jid) || [];
+  const todayStr = new Date().toLocaleDateString("sw-TZ", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  const userAsk = captionText
+    ? `Mtumiaji ametuma picha hii na kusema: "${captionText}"`
+    : "Mtumiaji ametuma picha hii bila maelezo yoyote.";
+
+  const instructionText = [
+    SYSTEM_PROMPT,
+    `\nLEO NI TAREHE: ${todayStr}.`,
+    "",
+    "Mazungumzo ya karibuni:",
+    ...hist.map((h) => `${h.role === "user" ? "Mtumiaji" : "Maleo"}: ${h.text}`),
+    "",
+    userAsk,
+    "Angalia picha hii kwa makini — kama kuna maandishi ndani yake, yasome na uyazingatie. Jibu kama Maleo, kwa ufupi na uwazi kulingana na kile kilichoombwa au kinachoonekana.",
+    "Maleo:",
+  ].join("\n");
+
+  const { text } = await geminiGenerateContent(PRIMARY_MODEL, [
+    {
+      role: "user",
+      parts: [
+        { inlineData: { mimeType, data: imageBuffer.toString("base64") } },
+        { text: instructionText },
+      ],
+    },
+  ]);
+
+  pushHistory(jid, "user", captionText || "[picha]");
+  pushHistory(jid, "assistant", text);
+  return text;
+}
+
 async function pngToAnimatedWebpSticker(pngBuffer) {
   const fs = require("fs");
   const os = require("os");
@@ -318,7 +353,7 @@ async function startMaleo() {
 
       const botJid = sock.user.id.split(":")[0];
       const botLid = sock.user.lid?.split(":")[0] || state.creds.me?.lid?.split(":")[0] || KNOWN_BOT_LID;
-      const contextInfo = msg.message.extendedTextMessage?.contextInfo || msg.message.stickerMessage?.contextInfo;
+      const contextInfo = msg.message.extendedTextMessage?.contextInfo || msg.message.stickerMessage?.contextInfo || msg.message.imageMessage?.contextInfo;
 
       const mentionedJids = contextInfo?.mentionedJid || [];
       const isMentioned = mentionedJids.some((j) => j.startsWith(botJid) || j.startsWith(botLid));
@@ -341,6 +376,28 @@ async function startMaleo() {
         } catch (err) {
           console.error("❌ Sticker error:", err.message);
           await sock.sendMessage(jid, { text: "Aisee, stika hiyo imenishinda. Jaribu nyingine. 🔴🟢" }, { quoted: msg });
+        }
+        return;
+      }
+
+      // ---- Picha ya kawaida (kuchambua/kusoma maandishi ndani yake) ----
+      if (msg.message.imageMessage) {
+        console.log(`🖼️ Picha kutoka ${jid}, nachambua...`);
+        try {
+          const imageBuffer = await downloadMediaMessage(msg, "buffer", {});
+          const mimeType = msg.message.imageMessage.mimetype || "image/jpeg";
+          const captionText = msg.message.imageMessage.caption || "";
+
+          await sock.sendPresenceUpdate("composing", jid);
+          const reply = await askMaleoAboutImage(jid, imageBuffer, mimeType, captionText);
+          const humanDelay = 10000 + Math.floor(Math.random() * 5000);
+          await sleep(humanDelay);
+          await sock.sendPresenceUpdate("paused", jid);
+          await sock.sendMessage(jid, { text: reply }, { quoted: msg });
+          console.log(`✅ Uchambuzi wa picha umetumwa kwa ${jid}`);
+        } catch (err) {
+          console.error("❌ Image analysis error:", err.message);
+          await sock.sendMessage(jid, { text: "Aisee, picha hiyo imenishinda kuichambua kwa sasa. Jaribu tena. 🔴🟢" }, { quoted: msg });
         }
         return;
       }
@@ -385,3 +442,4 @@ startMaleo().catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
 });
+  
